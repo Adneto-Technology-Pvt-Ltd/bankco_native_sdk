@@ -1,50 +1,125 @@
-# Welcome to your Expo app 👋
+# Bankco React Native SDK
 
-This is an [Expo](https://expo.dev) project created with [`create-expo-app`](https://www.npmjs.com/package/create-expo-app).
+React Native mobile SDK for embedding the Bankco web flow inside a host mobile application.
 
-## Get started
+## Repository Structure
 
-1. Install dependencies
-
-   ```bash
-   npm install
-   ```
-
-2. Start the app
-
-   ```bash
-   npx expo start
-   ```
-
-In the output, you'll find options to open the app in a
-
-- [development build](https://docs.expo.dev/develop/development-builds/introduction/)
-- [Android emulator](https://docs.expo.dev/workflow/android-studio-emulator/)
-- [iOS simulator](https://docs.expo.dev/workflow/ios-simulator/)
-- [Expo Go](https://expo.dev/go), a limited sandbox for trying out app development with Expo
-
-You can start developing by editing the files inside the **app** directory. This project uses [file-based routing](https://docs.expo.dev/router/introduction).
-
-## Get a fresh project
-
-When you're ready, run:
-
-```bash
-npm run reset-project
+```text
+bankco_native_sdk/
+├── sdk/
+│   ├── BankcoSdkView.js
+│   └── package.json
+├── example/
+│   ├── App.js
+│   ├── app.json
+│   └── package.json
+├── README.md
+└── .gitignore
 ```
 
-This command will move the starter code to the **app-example** directory and create a blank **app** directory where you can start developing.
+## Features
 
-## Learn more
+- Integrated native WebView wrapper for Android and iOS
+- Automatic query parameter handling for `token`, `mod=sdk`, and optional `card_id`
+- Android hardware back button support for in-WebView navigation
+- Built-in loading state
+- Example host app that demonstrates integration and a live SDK preview flow
 
-To learn more about developing your project with Expo, look at the following resources:
+## SDK API
 
-- [Expo documentation](https://docs.expo.dev/): Learn fundamentals, or go into advanced topics with our [guides](https://docs.expo.dev/guides).
-- [Learn Expo tutorial](https://docs.expo.dev/tutorial/introduction/): Follow a step-by-step tutorial where you'll create a project that runs on Android, iOS, and the web.
+`BankcoSdkView` accepts the following props:
 
-## Join the community
+- `url`: Base Bankco URL
+- `token`: Backend-issued token
+- `cardId`: Optional card identifier
 
-Join our community of developers creating universal apps.
+## URL Behavior
 
-- [Expo on GitHub](https://github.com/expo/expo): View our open source platform and contribute.
-- [Discord community](https://chat.expo.dev): Chat with Expo users and ask questions.
+The SDK automatically appends required query parameters.
+
+Final URL format:
+
+```text
+https://rewards.bankco.co.in?token=<token>&mod=sdk&card_id=<cardId>
+```
+
+If `cardId` is not provided, the `card_id` parameter is omitted.
+
+## Installation
+
+Add the required dependency to your host app:
+
+```bash
+npx expo install react-native-webview
+```
+
+Then copy the `sdk/` folder into your project or publish/install it from your internal GitHub workflow.
+
+## Integration
+
+```jsx
+import BankcoSdkView from 'bankco-native-sdk';
+
+export default function RewardsScreen() {
+  return (
+    <BankcoSdkView
+      url="https://rewards.bankco.co.in"
+      token="your_backend_token"
+      cardId="card_123"
+    />
+  );
+}
+```
+
+## Platform Notes
+
+### Android
+
+If you must load `http` URLs, enable cleartext traffic in your Android manifest:
+
+```xml
+<application android:usesCleartextTraffic="true">
+```
+
+### iOS
+
+If you must load `http` URLs, add App Transport Security exceptions:
+
+```xml
+<key>NSAppTransportSecurity</key>
+<dict>
+  <key>NSAllowsArbitraryLoads</key>
+  <true/>
+</dict>
+```
+
+### Web
+
+The SDK is designed for native mobile integration. Browser iframe embedding may be blocked by partner site security headers such as CSP `frame-ancestors` or `X-Frame-Options`.
+
+## Example App
+
+The `example/` directory contains a runnable Expo host app with:
+
+- Step-by-step integration guidance
+- Usage snippets
+- An Example SDK screen
+- A back button flow that returns from the SDK preview to the integration guide
+
+Run it with:
+
+```bash
+cd example
+npm install
+npx expo start
+```
+
+## Publish Checklist
+
+Before pushing to GitHub, verify:
+
+1. The SDK component is in `sdk/BankcoSdkView.js`.
+2. The example app imports the SDK from `bankco-native-sdk`.
+3. The final URL includes `token`, `mod=sdk`, and optional `card_id`.
+4. `node_modules` is not committed.
+5. Android and iOS smoke tests are complete.
