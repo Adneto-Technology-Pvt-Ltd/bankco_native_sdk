@@ -113,13 +113,3 @@ cd example
 npm install
 npx expo start
 ```
-
-## Publish Checklist
-
-Before pushing to GitHub, verify:
-
-1. The SDK component is in `sdk/BankcoSdkView.js`.
-2. The example app imports the SDK from `bankco-native-sdk`.
-3. The final URL includes `token`, `mod=sdk`, and optional `card_id`.
-4. `node_modules` is not committed.
-5. Android and iOS smoke tests are complete.
