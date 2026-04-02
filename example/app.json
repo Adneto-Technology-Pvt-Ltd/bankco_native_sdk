@@ -1,9 +1,0 @@
-{
-  "expo": {
-    "name": "Bankco SDK Example",
-    "slug": "bankco-native-sdk-example",
-    "version": "1.0.0",
-    "orientation": "portrait",
-    "userInterfaceStyle": "automatic"
-  }
-}

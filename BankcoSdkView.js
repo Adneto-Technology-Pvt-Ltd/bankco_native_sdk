@@ -1,0 +1,396 @@
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  ActivityIndicator,
+  BackHandler,
+  Linking,
+  Platform,
+  Pressable,
+  StyleSheet,
+  Text,
+  View,
+} from 'react-native';
+import { WebView } from 'react-native-webview';
+
+const SDK_MODE = 'mobsdk';
+const DEFAULT_TIMEOUT_MS = 15000;
+const READY_MESSAGE_SOURCE = 'bankco-native-sdk';
+const READY_SCRIPT = `
+  (function () {
+    var hasPosted = false;
+
+    function post(type) {
+      if (hasPosted) {
+        return;
+      }
+
+      hasPosted = true;
+
+      if (window.ReactNativeWebView && window.ReactNativeWebView.postMessage) {
+        window.ReactNativeWebView.postMessage(
+          JSON.stringify({
+            source: '${READY_MESSAGE_SOURCE}',
+            type: type,
+            href: window.location.href,
+            readyState: document.readyState
+          })
+        );
+      }
+    }
+
+    if (document.readyState === 'interactive' || document.readyState === 'complete') {
+      post('dom-ready');
+    } else {
+      document.addEventListener('DOMContentLoaded', function () {
+        post('dom-ready');
+      }, { once: true });
+      window.addEventListener('load', function () {
+        post('window-load');
+      }, { once: true });
+    }
+
+    setTimeout(function () {
+      post('ready-fallback');
+    }, 4000);
+  })();
+  true;
+`;
+
+function buildSdkUrl(url, token, cardId) {
+  const separator = url.includes('?') ? '&' : '?';
+  let finalUrl = `${url}${separator}token=${encodeURIComponent(token)}&mod=${SDK_MODE}`;
+
+  if (cardId) {
+    finalUrl += `&card_id=${encodeURIComponent(cardId)}`;
+  }
+
+  return finalUrl;
+}
+
+function getErrorDescription(nativeEvent) {
+  return nativeEvent?.description || nativeEvent?.code || 'Unknown WebView error';
+}
+
+function parseMessage(data) {
+  try {
+    return JSON.parse(data);
+  } catch (_error) {
+    return null;
+  }
+}
+
+export default function BankcoSdkView({
+  url,
+  token,
+  cardId,
+  debug = false,
+  timeoutMs = DEFAULT_TIMEOUT_MS,
+  onLoadStateChange,
+  onError,
+}) {
+  const webViewRef = useRef(null);
+  const loadTimeoutRef = useRef(null);
+  const hasCompletedInitialLoadRef = useRef(false);
+  const [canGoBack, setCanGoBack] = useState(false);
+  const [isLoading, setIsLoading] = useState(true);
+  const [errorMessage, setErrorMessage] = useState('');
+  const [lastEvent, setLastEvent] = useState('idle');
+  const finalUrl = useMemo(() => buildSdkUrl(url, token, cardId), [cardId, token, url]);
+
+  const reportState = useCallback(
+    (type, details = {}) => {
+      setLastEvent(type);
+      onLoadStateChange?.({ type, finalUrl, ...details });
+
+      if (debug) {
+        console.log('BankcoSdkView', type, { finalUrl, ...details });
+      }
+    },
+    [debug, finalUrl, onLoadStateChange]
+  );
+
+  const clearLoadTimeout = useCallback(() => {
+    if (loadTimeoutRef.current) {
+      clearTimeout(loadTimeoutRef.current);
+      loadTimeoutRef.current = null;
+    }
+  }, []);
+
+  const completeInitialLoad = useCallback(
+    (type, details = {}) => {
+      clearLoadTimeout();
+      hasCompletedInitialLoadRef.current = true;
+      setIsLoading(false);
+      reportState(type, details);
+    },
+    [clearLoadTimeout, reportState]
+  );
+
+  const startLoadTimeout = useCallback(() => {
+    clearLoadTimeout();
+    loadTimeoutRef.current = setTimeout(() => {
+      reportState(`timeout:${timeoutMs}ms`);
+      setIsLoading(false);
+      setErrorMessage(
+        `The SDK page did not finish loading within ${Math.round(
+          timeoutMs / 1000
+        )} seconds. This usually indicates a redirect loop, SSL issue, or network problem.`
+      );
+      onError?.({ type: 'timeout', finalUrl, timeoutMs });
+    }, timeoutMs);
+  }, [clearLoadTimeout, finalUrl, onError, reportState, timeoutMs]);
+
+  const handleAndroidBackPress = useCallback(() => {
+    if (Platform.OS === 'android' && canGoBack && webViewRef.current) {
+      webViewRef.current.goBack();
+      return true;
+    }
+
+    return false;
+  }, [canGoBack]);
+
+  useEffect(() => {
+    hasCompletedInitialLoadRef.current = false;
+    setCanGoBack(false);
+    setIsLoading(true);
+    setErrorMessage('');
+    setLastEvent('idle');
+    clearLoadTimeout();
+  }, [clearLoadTimeout, finalUrl]);
+
+  useEffect(() => {
+    if (Platform.OS !== 'android') {
+      return undefined;
+    }
+
+    const subscription = BackHandler.addEventListener(
+      'hardwareBackPress',
+      handleAndroidBackPress
+    );
+
+    return () => subscription.remove();
+  }, [handleAndroidBackPress]);
+
+  useEffect(() => () => clearLoadTimeout(), [clearLoadTimeout]);
+
+  if (Platform.OS === 'web') {
+    return (
+      <View style={styles.webFallback}>
+        <Text style={styles.webFallbackTitle}>Mobile SDK preview is native-first</Text>
+        <Text style={styles.webFallbackBody}>
+          The Bankco SDK is intended for Android and iOS WebView integration. Browser embedding may
+          be blocked by partner site security headers.
+        </Text>
+        <Pressable onPress={() => Linking.openURL(finalUrl)} style={styles.webFallbackButton}>
+          <Text style={styles.webFallbackButtonText}>Open Final URL in Browser</Text>
+        </Pressable>
+      </View>
+    );
+  }
+
+  if (errorMessage) {
+    return (
+      <View style={styles.errorState}>
+        <Text style={styles.errorTitle}>Unable to load Bankco SDK</Text>
+        <Text style={styles.errorBody}>{errorMessage}</Text>
+        {debug ? (
+          <>
+            <Text style={styles.errorUrlLabel}>Last Event</Text>
+            <Text style={styles.errorUrlValue}>{lastEvent}</Text>
+            <Text style={styles.errorUrlLabel}>Final URL</Text>
+            <Text style={styles.errorUrlValue}>{finalUrl}</Text>
+          </>
+        ) : null}
+      </View>
+    );
+  }
+
+  return (
+    <View style={styles.container}>
+      <WebView
+        ref={webViewRef}
+        source={{ uri: finalUrl }}
+        startInLoadingState
+        injectedJavaScriptBeforeContentLoaded={READY_SCRIPT}
+        onLoadStart={(event) => {
+          const nextUrl = event.nativeEvent?.url || finalUrl;
+          setErrorMessage('');
+          reportState('loadStart', { url: nextUrl });
+
+          if (!hasCompletedInitialLoadRef.current) {
+            setIsLoading(true);
+            startLoadTimeout();
+          }
+        }}
+        onLoadEnd={(event) => {
+          const nextUrl = event.nativeEvent?.url || finalUrl;
+
+          if (!hasCompletedInitialLoadRef.current) {
+            completeInitialLoad('loadEnd', { url: nextUrl });
+            return;
+          }
+
+          reportState('loadEnd', { url: nextUrl });
+        }}
+        onMessage={(event) => {
+          const payload = parseMessage(event.nativeEvent?.data);
+
+          if (!payload || payload.source !== READY_MESSAGE_SOURCE) {
+            return;
+          }
+
+          if (!hasCompletedInitialLoadRef.current) {
+            completeInitialLoad(payload.type || 'message', payload);
+            return;
+          }
+
+          reportState(payload.type || 'message', payload);
+        }}
+        onError={(event) => {
+          clearLoadTimeout();
+          const description = getErrorDescription(event.nativeEvent);
+          reportState('error', { description, nativeEvent: event.nativeEvent });
+          setIsLoading(false);
+          setErrorMessage(description);
+          onError?.({ type: 'error', finalUrl, nativeEvent: event.nativeEvent, description });
+        }}
+        onHttpError={(event) => {
+          clearLoadTimeout();
+          reportState('httpError', {
+            statusCode: event.nativeEvent.statusCode,
+            nativeEvent: event.nativeEvent,
+          });
+          setIsLoading(false);
+          setErrorMessage(`HTTP ${event.nativeEvent.statusCode} while loading the SDK page.`);
+          onError?.({
+            type: 'httpError',
+            finalUrl,
+            nativeEvent: event.nativeEvent,
+            statusCode: event.nativeEvent.statusCode,
+          });
+        }}
+        onNavigationStateChange={(navState) => {
+          setCanGoBack(navState.canGoBack);
+          reportState('navigation', { url: navState.url, canGoBack: navState.canGoBack });
+        }}
+        javaScriptEnabled
+        javaScriptCanOpenWindowsAutomatically
+        domStorageEnabled
+        sharedCookiesEnabled
+        thirdPartyCookiesEnabled
+        setSupportMultipleWindows={false}
+        originWhitelist={['*']}
+        style={styles.webview}
+      />
+
+      {isLoading ? (
+        <View pointerEvents="none" style={styles.loader}>
+          <ActivityIndicator color="#F8B400" size="large" />
+          {debug ? (
+            <>
+              <Text style={styles.loaderText}>Loading Bankco SDK</Text>
+              <Text style={styles.loaderMeta}>{lastEvent}</Text>
+              <Text numberOfLines={3} style={styles.loaderMeta}>
+                {finalUrl}
+              </Text>
+            </>
+          ) : null}
+        </View>
+      ) : null}
+    </View>
+  );
+}
+
+const styles = StyleSheet.create({
+  container: {
+    flex: 1,
+  },
+  webview: {
+    flex: 1,
+  },
+  loader: {
+    ...StyleSheet.absoluteFillObject,
+    alignItems: 'center',
+    backgroundColor: '#FFFFFF',
+    justifyContent: 'center',
+    paddingHorizontal: 24,
+  },
+  loaderText: {
+    color: '#112A46',
+    fontSize: 16,
+    fontWeight: '700',
+    marginTop: 14,
+    textAlign: 'center',
+  },
+  loaderMeta: {
+    color: '#4B5563',
+    fontSize: 12,
+    lineHeight: 18,
+    marginTop: 8,
+    textAlign: 'center',
+  },
+  webFallback: {
+    alignItems: 'center',
+    backgroundColor: '#FFF8E5',
+    borderRadius: 20,
+    flex: 1,
+    justifyContent: 'center',
+    padding: 24,
+  },
+  webFallbackTitle: {
+    color: '#112A46',
+    fontSize: 22,
+    fontWeight: '800',
+    marginBottom: 10,
+    textAlign: 'center',
+  },
+  webFallbackBody: {
+    color: '#4B5563',
+    fontSize: 15,
+    lineHeight: 22,
+    marginBottom: 18,
+    textAlign: 'center',
+  },
+  webFallbackButton: {
+    backgroundColor: '#F8B400',
+    borderRadius: 999,
+    paddingHorizontal: 18,
+    paddingVertical: 12,
+  },
+  webFallbackButtonText: {
+    color: '#2C1B00',
+    fontSize: 14,
+    fontWeight: '800',
+  },
+  errorState: {
+    backgroundColor: '#FFF8E5',
+    borderRadius: 20,
+    flex: 1,
+    justifyContent: 'center',
+    padding: 24,
+  },
+  errorTitle: {
+    color: '#7C2D12',
+    fontSize: 22,
+    fontWeight: '800',
+    marginBottom: 10,
+  },
+  errorBody: {
+    color: '#4B5563',
+    fontSize: 15,
+    lineHeight: 22,
+  },
+  errorUrlLabel: {
+    color: '#7C2D12',
+    fontSize: 12,
+    fontWeight: '800',
+    letterSpacing: 1,
+    marginTop: 18,
+    textTransform: 'uppercase',
+  },
+  errorUrlValue: {
+    color: '#374151',
+    fontSize: 14,
+    lineHeight: 20,
+    marginTop: 6,
+  },
+});

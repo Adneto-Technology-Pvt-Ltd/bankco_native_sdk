@@ -1,12 +1,40 @@
 {
-  "name": "bankco_native_sdk",
-  "private": true,
-  "version": "1.0.0",
-  "description": "Bankco React Native SDK repository with a reusable SDK module and Expo example app.",
-  "scripts": {
-    "start": "npm --prefix example start",
-    "android": "npm --prefix example run android",
-    "ios": "npm --prefix example run ios",
-    "web": "npm --prefix example run web"
+  "name": "bankco-native-sdk",
+  "version": "1.0.3",
+  "main": "index.js",
+  "react-native": "index.js",
+  "description": "React Native SDK for embedding the Bankco web flow inside a host mobile application.",
+  "files": [
+    "index.js",
+    "BankcoSdkView.js",
+    "README.md"
+  ],
+  "exports": {
+    ".": "./index.js"
+  },
+  "keywords": [
+    "bankco",
+    "react-native",
+    "expo",
+    "sdk",
+    "webview"
+  ],
+  "license": "MIT",
+  "sideEffects": false,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/VickyAdneto/bankco_native_sdk.git"
+  },
+  "bugs": {
+    "url": "https://github.com/VickyAdneto/bankco_native_sdk/issues"
+  },
+  "homepage": "https://github.com/VickyAdneto/bankco_native_sdk#readme",
+  "peerDependencies": {
+    "react": ">=18",
+    "react-native": ">=0.72",
+    "react-native-webview": ">=13"
+  },
+  "publishConfig": {
+    "access": "public"
   }
 }
