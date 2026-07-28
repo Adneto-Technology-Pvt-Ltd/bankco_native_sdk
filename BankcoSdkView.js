@@ -166,44 +166,39 @@ export default function BankcoSdkView({
   useEffect(() => () => clearLoadTimeout(), [clearLoadTimeout]);
 
   // Offline-offer redemption calls navigator.geolocation from the web flow.
-  // geolocationEnabled below turns on the WebView's own permission bridge,
-  // but that bridge only checks whether the OS-level runtime permission is
-  // already granted - it does not itself trigger the system prompt, so we
-  // request it explicitly here, before the user can reach the offer step.
-  // iOS's WKWebView bridges geolocation to Core Location and shows the
-  // system prompt automatically once the host app's Info.plist declares
-  // NSLocationWhenInUseUsageDescription, so no code is needed there.
+  // geolocationEnabled below is fully sufficient on its own: react-native-
+  // webview's own native WebChromeClient.onGeolocationPermissionsShowPrompt
+  // already checks ACCESS_FINE_LOCATION and, if not yet granted, calls
+  // Activity.requestPermissions() itself - the system dialog appears without
+  // any app code, and once resolved it grants (or denies) the WebView's
+  // request directly. iOS's WKWebView does the equivalent via Core Location
+  // once Info.plist declares NSLocationWhenInUseUsageDescription. No prior
+  // in-app permission request is required or should be added here - a
+  // second, separate PermissionsAndroid.request() call racing the WebView's
+  // own internal one can collide, since Android only allows one
+  // requestPermissions() call in flight per Activity at a time.
   //
-  // Reported via reportState/onLoadStateChange (not just `debug` console
-  // logs) because "the popup never showed" is otherwise very hard to
-  // diagnose - in particular, Expo Go ignores this app's own AndroidManifest
-  // config entirely (it runs inside Expo Go's own pre-built one), and the
-  // OS remembers a prior denial for Expo Go itself across every project
-  // tested through it until it's reset in Settings or the check below will
-  // report `granted: false` with no dialog ever appearing.
+  // This effect only *checks* (never requests) current status, reported via
+  // reportState/onLoadStateChange as `locationPermission:check`, so you can
+  // see in `debug` mode whether the OS already holds a grant/denial before
+  // the WebView even asks. If this reports granted: true and offline-offer
+  // redemption still doesn't work, the remaining likely causes are outside
+  // this SDK's control: the device/emulator has no real GPS fix (check
+  // Location Services is genuinely on, not just permitted, and that an
+  // emulator has a location set under Extended Controls), or Google Play
+  // Services' location provider is unavailable - Android WebView's
+  // geolocation implementation depends on it even when every permission is
+  // granted.
   useEffect(() => {
     if (Platform.OS !== 'android') {
       return;
     }
 
     PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION)
-      .then((alreadyGranted) => {
-        reportState('locationPermission:check', { granted: alreadyGranted });
-
-        if (alreadyGranted) {
-          return undefined;
-        }
-
-        return PermissionsAndroid.request(
-          PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION
-        ).then((result) => {
-          reportState('locationPermission:request', { result });
-        });
+      .then((granted) => {
+        reportState('locationPermission:check', { granted });
       })
       .catch((error) => {
-        // Ignore - if this fails or is denied, geolocation requests from
-        // the web flow will just fail the same way they would on a normal
-        // site with location blocked, which the page already handles.
         reportState('locationPermission:error', { error: String(error) });
       });
   }, [reportState]);

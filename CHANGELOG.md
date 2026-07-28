@@ -1,3 +1,21 @@
+## 1.1.2
+
+- Removed the explicit `PermissionsAndroid.request(ACCESS_FINE_LOCATION)`
+  call added in 1.1.1. Tracing `react-native-webview`'s actual native
+  source showed this was based on an incorrect assumption: its
+  `WebChromeClient.onGeolocationPermissionsShowPrompt` already checks the
+  permission and, if not yet granted, calls `Activity.requestPermissions()`
+  itself - `geolocationEnabled` alone is fully sufficient, and a second,
+  separate request could collide with the WebView's own (Android only
+  allows one `requestPermissions()` call in flight per Activity). The
+  effect now only *checks* current status for diagnostics
+  (`locationPermission:check` via `onLoadStateChange`) and never requests.
+- Documented that if permission is confirmed granted and offline-offer
+  redemption still doesn't work, the remaining causes are outside this
+  SDK's control: no real GPS fix, or Google Play Services' location
+  provider unavailable - both of which Android WebView's geolocation
+  implementation depends on regardless of permission state.
+
 ## 1.1.1
 
 - The Android location-permission check/request now reports through

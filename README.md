@@ -139,16 +139,32 @@ inside a native WebView there's no such built-in popup.
   <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
   ```
 
-  `BankcoSdkView` sets `geolocationEnabled` on the underlying WebView and
-  requests the Android runtime permission itself on mount (via
-  `PermissionsAndroid`) - once the manifest declares it, the OS permission
-  dialog appears the same way it would on a normal website. It only shows
-  a dialog the first time (or after the permission is reset); if already
-  granted or permanently denied, the request resolves silently.
+  Setting `geolocationEnabled` on `BankcoSdkView` is fully sufficient by
+  itself - `react-native-webview`'s own native `WebChromeClient` already
+  checks `ACCESS_FINE_LOCATION` and, if not yet granted, triggers the
+  Android system permission dialog itself (via `Activity.requestPermissions`)
+  the first time the web flow calls `navigator.geolocation`. No in-app
+  permission request needs to be layered on top of this - and adding one
+  can cause its own problems, since Android only allows one permission
+  request in flight per Activity at a time, and a competing request could
+  collide with the WebView's own.
+
+  `BankcoSdkView` only *checks* (never requests) the current status on
+  mount, reported via `onLoadStateChange` as `locationPermission:check`, so
+  you can see in `debug` mode whether the OS already holds a grant/denial
+  before the WebView even asks.
 
   Geolocation also requires a **secure origin** - Android's WebView denies
   it outright on plain `http://` URLs (localhost excepted), regardless of
   permissions.
+
+  **If permission is confirmed granted (in device Settings) and it's still
+  not working**: the remaining causes are outside this SDK's control -
+  either the device/emulator has no real GPS fix (confirm Location Services
+  is genuinely on, not just permitted; on an emulator, set a location under
+  Extended Controls), or Google Play Services' location provider is
+  unavailable, which Android WebView's geolocation implementation depends on
+  even when every permission is granted.
 
   **Testing in Expo Go**: Expo Go is a pre-built app - it does not read your
   project's `app.json` permissions or config plugins at all, and its own
@@ -156,11 +172,8 @@ inside a native WebView there's no such built-in popup.
   you've ever tested through it on that device. If it was denied once
   (even in an unrelated project), no dialog will show again until you reset
   it in Android Settings → Apps → Expo Go → Permissions, or reinstall Expo
-  Go. Set `debug` and watch for `locationPermission:check` /
-  `locationPermission:request` in `onLoadStateChange` to see whether the
-  request even ran and what it returned. For a test that matches your real
-  app's manifest, use a custom dev build (`npx expo run:android` or an EAS
-  development build) instead of Expo Go.
+  Go. For a test that matches your real app's manifest, use a custom dev
+  build (`npx expo run:android` or an EAS development build) instead.
 
 - **iOS**: add the usage description to host app `ios/Runner/Info.plist`
   (or `app.json`'s `ios.infoPlist` for Expo):
@@ -227,6 +240,7 @@ that's expected - the user needs a UPI app on the device to pay that way.
 | Page never loads over `http://` | Cleartext/ATS blocked by the OS | [HTTP URLs](#http-urls-cleartext--ats) |
 | No location prompt appears; offline-offer redemption fails | Missing manifest/Info.plist declarations, or testing over `http://` | [Location permission](#location-permission-offline-offer-redemption) |
 | No location prompt in Expo Go specifically, even with declarations in place | Expo Go ignores your app's manifest/config and remembers denials across every project tested through it | See "Testing in Expo Go" under [Location permission](#location-permission-offline-offer-redemption) |
+| Permission confirmed granted (Settings shows it on), HTTPS URL, but offline-offer redemption still doesn't work | No real GPS fix (device/emulator) or Google Play Services location provider unavailable - both outside the SDK's control | See the "still not working" note under [Location permission](#location-permission-offline-offer-redemption) |
 | `onError` fires with `type: 'externalLinkUnsupported'` during PayU checkout | Missing `<queries>` (Android) / `LSApplicationQueriesSchemes` (iOS) declarations | [UPI/wallet app hand-off](#upiwallet-app-hand-off-paid-offers-via-payu) |
 | `onError` fires with `type: 'externalLinkUnsupported'` and the declarations above are already in place | No app installed on the device for that payment scheme - not a bug | Same as above |
 
