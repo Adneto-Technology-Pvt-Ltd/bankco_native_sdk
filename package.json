@@ -1,6 +1,6 @@
 {
   "name": "bankco-native-sdk",
-  "version": "1.0.3",
+  "version": "1.1.1",
   "main": "index.js",
   "react-native": "index.js",
   "description": "React Native SDK for embedding the Bankco web flow inside a host mobile application.",
@@ -23,12 +23,12 @@
   "sideEffects": false,
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/VickyAdneto/bankco_native_sdk.git"
+    "url": "git+https://github.com/Adneto-Technology-Pvt-Ltd/bankco_native_sdk.git"
   },
   "bugs": {
-    "url": "https://github.com/VickyAdneto/bankco_native_sdk/issues"
+    "url": "https://github.com/Adneto-Technology-Pvt-Ltd/bankco_native_sdk/issues"
   },
-  "homepage": "https://github.com/VickyAdneto/bankco_native_sdk#readme",
+  "homepage": "https://github.com/Adneto-Technology-Pvt-Ltd/bankco_native_sdk#readme",
   "peerDependencies": {
     "react": ">=18",
     "react-native": ">=0.72",

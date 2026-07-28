@@ -1,13 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
-  ActivityIndicator,
-  BackHandler,
-  Linking,
-  Platform,
-  Pressable,
-  StyleSheet,
-  Text,
-  View,
+  ActivityIndicator, BackHandler, Linking, PermissionsAndroid, Platform, Pressable, StyleSheet, Text, View,
 } from 'react-native';
 import { WebView } from 'react-native-webview';
 
@@ -172,6 +165,80 @@ export default function BankcoSdkView({
 
   useEffect(() => () => clearLoadTimeout(), [clearLoadTimeout]);
 
+  // Offline-offer redemption calls navigator.geolocation from the web flow.
+  // geolocationEnabled below turns on the WebView's own permission bridge,
+  // but that bridge only checks whether the OS-level runtime permission is
+  // already granted - it does not itself trigger the system prompt, so we
+  // request it explicitly here, before the user can reach the offer step.
+  // iOS's WKWebView bridges geolocation to Core Location and shows the
+  // system prompt automatically once the host app's Info.plist declares
+  // NSLocationWhenInUseUsageDescription, so no code is needed there.
+  //
+  // Reported via reportState/onLoadStateChange (not just `debug` console
+  // logs) because "the popup never showed" is otherwise very hard to
+  // diagnose - in particular, Expo Go ignores this app's own AndroidManifest
+  // config entirely (it runs inside Expo Go's own pre-built one), and the
+  // OS remembers a prior denial for Expo Go itself across every project
+  // tested through it until it's reset in Settings or the check below will
+  // report `granted: false` with no dialog ever appearing.
+  useEffect(() => {
+    if (Platform.OS !== 'android') {
+      return;
+    }
+
+    PermissionsAndroid.check(PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION)
+      .then((alreadyGranted) => {
+        reportState('locationPermission:check', { granted: alreadyGranted });
+
+        if (alreadyGranted) {
+          return undefined;
+        }
+
+        return PermissionsAndroid.request(
+          PermissionsAndroid.PERMISSIONS.ACCESS_FINE_LOCATION
+        ).then((result) => {
+          reportState('locationPermission:request', { result });
+        });
+      })
+      .catch((error) => {
+        // Ignore - if this fails or is denied, geolocation requests from
+        // the web flow will just fail the same way they would on a normal
+        // site with location blocked, which the page already handles.
+        reportState('locationPermission:error', { error: String(error) });
+      });
+  }, [reportState]);
+
+  // PayU hands off UPI/wallet payment approval by navigating to an app deep
+  // link (upi://, tez://, phonepe://, ...) instead of a web page. The
+  // WebView can't load that itself - returning false here stops it from
+  // trying, and Linking.openURL hands it to the OS the same way a normal
+  // mobile browser would.
+  const handleShouldStartLoad = useCallback(
+    (request) => {
+      const requestUrl = request?.url || '';
+
+      if (/^https?:\/\//i.test(requestUrl) || requestUrl === 'about:blank') {
+        return true;
+      }
+
+      Linking.canOpenURL(requestUrl)
+        .then((supported) => {
+          if (supported) {
+            return Linking.openURL(requestUrl);
+          }
+          reportState('externalLinkUnsupported', { url: requestUrl });
+          onError?.({ type: 'externalLinkUnsupported', finalUrl, url: requestUrl });
+          return undefined;
+        })
+        .catch((error) => {
+          reportState('externalLinkError', { url: requestUrl, error: String(error) });
+        });
+
+      return false;
+    },
+    [finalUrl, onError, reportState]
+  );
+
   if (Platform.OS === 'web') {
     return (
       <View style={styles.webFallback}>
@@ -272,6 +339,7 @@ export default function BankcoSdkView({
           setCanGoBack(navState.canGoBack);
           reportState('navigation', { url: navState.url, canGoBack: navState.canGoBack });
         }}
+        onShouldStartLoadWithRequest={handleShouldStartLoad}
         javaScriptEnabled
         javaScriptCanOpenWindowsAutomatically
         domStorageEnabled
@@ -279,6 +347,7 @@ export default function BankcoSdkView({
         thirdPartyCookiesEnabled
         setSupportMultipleWindows={false}
         originWhitelist={['*']}
+        geolocationEnabled
         style={styles.webview}
       />
 
