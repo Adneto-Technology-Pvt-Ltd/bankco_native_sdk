@@ -62,6 +62,40 @@ backend/config, pass them (plus `cardId` if you have one) to
 - On Android, the hardware back button steps back through WebView history
   when there is any; otherwise it falls through to your app's normal back
   handling (e.g. React Navigation popping the screen).
+- If your own screen has its own back UI (a header back button, a custom
+  hardware-back listener, a navigation library) and you want it to also
+  step through the WebView's history first, attach a `ref` - see "Back
+  navigation" below.
+
+## Back navigation
+
+`BankcoSdkView` forwards a `ref` exposing:
+
+- `goBack(): boolean` - steps the WebView back one entry if it has history;
+  returns whether it did.
+- `canGoBack(): boolean` - current WebView history state.
+
+Use this when your app has its own back button/handler and you want it to
+defer to the WebView's page history first, only falling through to your
+own back action (leaving the SDK screen) once the WebView has nowhere left
+to go:
+
+```jsx
+const sdkRef = useRef(null);
+
+const handleBackPress = () => {
+  if (sdkRef.current?.goBack()) {
+    return; // stepped back within the web flow
+  }
+  leaveSdkScreen(); // no more WebView history - go back to your own screen
+};
+
+<BankcoSdkView ref={sdkRef} url={url} token={token} />;
+```
+
+Without a ref, the SDK still handles the Android hardware back button
+internally the same way (WebView-history-first) - this is only needed if
+your app wants its own back UI to behave the same way.
 
 ## Props
 
@@ -251,15 +285,6 @@ that's expected - the user needs a UPI app on the device to pay that way.
   partner site security headers even when native WebView works fine.
 - The SDK does not create or push its own native screen automatically - see
   [Integration model](#integration-model).
-
-## Publish
-
-Publish from the repo root:
-
-```bash
-npm login
-npm publish
-```
 
 ## Changelog
 

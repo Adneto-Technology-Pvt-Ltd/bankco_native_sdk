@@ -1,3 +1,15 @@
+## 1.2.0
+
+- `BankcoSdkView` now supports a `ref` exposing `goBack()` and
+  `canGoBack()`. Previously the WebView's own page history (e.g. offer
+  list -> offer detail) was only reachable through the SDK's internal
+  Android hardware-back handling - a host app's own back UI (a header
+  "< Back" button, a custom hardware-back listener, React Navigation, etc.)
+  had no way to step through that history first and always left the SDK
+  screen entirely instead. `ref.current.goBack()` steps the WebView back
+  and returns whether it did; `ref.current.canGoBack()` reports current
+  state. This is additive - existing usage without a ref is unaffected.
+
 ## 1.1.2
 
 - Removed the explicit `PermissionsAndroid.request(ACCESS_FINE_LOCATION)`

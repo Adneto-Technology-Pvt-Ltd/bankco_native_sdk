@@ -1,4 +1,6 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import {
+  forwardRef, useCallback, useEffect, useImperativeHandle, useMemo, useRef, useState,
+} from 'react';
 import {
   ActivityIndicator, BackHandler, Linking, PermissionsAndroid, Platform, Pressable, StyleSheet, Text, View,
 } from 'react-native';
@@ -11,26 +13,23 @@ const READY_SCRIPT = `
   (function () {
     var hasPosted = false;
 
-    function postEvent(type, details) {
-      if (window.ReactNativeWebView && window.ReactNativeWebView.postMessage) {
-        window.ReactNativeWebView.postMessage(
-          JSON.stringify(Object.assign({
-            source: '${READY_MESSAGE_SOURCE}',
-            type: type,
-            href: window.location.href,
-            readyState: document.readyState
-          }, details || {}))
-        );
-      }
-    }
-
     function post(type) {
       if (hasPosted) {
         return;
       }
 
       hasPosted = true;
-      postEvent(type);
+
+      if (window.ReactNativeWebView && window.ReactNativeWebView.postMessage) {
+        window.ReactNativeWebView.postMessage(
+          JSON.stringify({
+            source: '${READY_MESSAGE_SOURCE}',
+            type: type,
+            href: window.location.href,
+            readyState: document.readyState
+          })
+        );
+      }
     }
 
     if (document.readyState === 'interactive' || document.readyState === 'complete') {
@@ -47,50 +46,6 @@ const READY_SCRIPT = `
     setTimeout(function () {
       post('ready-fallback');
     }, 4000);
-
-    // Surfaces in-page JS failures back to the native debug log. Without
-    // this, a thrown error or rejected promise inside the loaded website
-    // (e.g. in an offer's click handler) is invisible to the wrapper - the
-    // WebView only reports its own navigation/load events, never what the
-    // page's own script did or failed to do.
-    window.addEventListener('error', function (event) {
-      postEvent('page:js-error', {
-        message: event.message,
-        filename: event.filename,
-        lineno: event.lineno,
-        colno: event.colno
-      });
-    });
-
-    window.addEventListener('unhandledrejection', function (event) {
-      postEvent('page:unhandled-rejection', {
-        reason: event.reason ? String(event.reason) : 'unknown'
-      });
-    });
-
-    var origConsoleError = console.error;
-    console.error = function () {
-      try {
-        postEvent('page:console-error', {
-          args: Array.prototype.slice.call(arguments).map(function (value) {
-            return String(value);
-          })
-        });
-      } catch (_forwardError) {}
-      return origConsoleError.apply(console, arguments);
-    };
-
-    var origConsoleWarn = console.warn;
-    console.warn = function () {
-      try {
-        postEvent('page:console-warn', {
-          args: Array.prototype.slice.call(arguments).map(function (value) {
-            return String(value);
-          })
-        });
-      } catch (_forwardError) {}
-      return origConsoleWarn.apply(console, arguments);
-    };
   })();
   true;
 `;
@@ -118,15 +73,9 @@ function parseMessage(data) {
   }
 }
 
-export default function BankcoSdkView({
-  url,
-  token,
-  cardId,
-  debug = false,
-  timeoutMs = DEFAULT_TIMEOUT_MS,
-  onLoadStateChange,
-  onError,
-}) {
+const BankcoSdkView = forwardRef(function BankcoSdkView({
+  url, token, cardId, debug = false, timeoutMs = DEFAULT_TIMEOUT_MS, onLoadStateChange, onError,
+}, ref) {
   const webViewRef = useRef(null);
   const loadTimeoutRef = useRef(null);
   const hasCompletedInitialLoadRef = useRef(false);
@@ -187,6 +136,27 @@ export default function BankcoSdkView({
 
     return false;
   }, [canGoBack]);
+
+  // Lets a host app that wants its own back-navigation UX (e.g. a header
+  // "< Back" button, or a hardware-back listener registered above this
+  // component) step through the WebView's own page history first, instead
+  // of that button always closing the whole SDK screen. Returns whether it
+  // actually navigated back, so the caller knows whether to fall through to
+  // its own back action.
+  useImperativeHandle(
+    ref,
+    () => ({
+      goBack: () => {
+        if (canGoBack && webViewRef.current) {
+          webViewRef.current.goBack();
+          return true;
+        }
+        return false;
+      },
+      canGoBack: () => canGoBack,
+    }),
+    [canGoBack]
+  );
 
   useEffect(() => {
     hasCompletedInitialLoadRef.current = false;
@@ -409,7 +379,9 @@ export default function BankcoSdkView({
       ) : null}
     </View>
   );
-}
+});
+
+export default BankcoSdkView;
 
 const styles = StyleSheet.create({
   container: {
