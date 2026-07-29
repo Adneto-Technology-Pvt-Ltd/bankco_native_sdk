@@ -252,14 +252,14 @@ that's expected - the user needs a UPI app on the device to pay that way.
 - The SDK does not create or push its own native screen automatically - see
   [Integration model](#integration-model).
 
-<!-- ## Publish
+## Publish
 
 Publish from the repo root:
 
 ```bash
 npm login
 npm publish
-``` -->
+```
 
 ## Changelog
 

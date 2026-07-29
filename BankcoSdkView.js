@@ -11,23 +11,26 @@ const READY_SCRIPT = `
   (function () {
     var hasPosted = false;
 
+    function postEvent(type, details) {
+      if (window.ReactNativeWebView && window.ReactNativeWebView.postMessage) {
+        window.ReactNativeWebView.postMessage(
+          JSON.stringify(Object.assign({
+            source: '${READY_MESSAGE_SOURCE}',
+            type: type,
+            href: window.location.href,
+            readyState: document.readyState
+          }, details || {}))
+        );
+      }
+    }
+
     function post(type) {
       if (hasPosted) {
         return;
       }
 
       hasPosted = true;
-
-      if (window.ReactNativeWebView && window.ReactNativeWebView.postMessage) {
-        window.ReactNativeWebView.postMessage(
-          JSON.stringify({
-            source: '${READY_MESSAGE_SOURCE}',
-            type: type,
-            href: window.location.href,
-            readyState: document.readyState
-          })
-        );
-      }
+      postEvent(type);
     }
 
     if (document.readyState === 'interactive' || document.readyState === 'complete') {
@@ -44,6 +47,50 @@ const READY_SCRIPT = `
     setTimeout(function () {
       post('ready-fallback');
     }, 4000);
+
+    // Surfaces in-page JS failures back to the native debug log. Without
+    // this, a thrown error or rejected promise inside the loaded website
+    // (e.g. in an offer's click handler) is invisible to the wrapper - the
+    // WebView only reports its own navigation/load events, never what the
+    // page's own script did or failed to do.
+    window.addEventListener('error', function (event) {
+      postEvent('page:js-error', {
+        message: event.message,
+        filename: event.filename,
+        lineno: event.lineno,
+        colno: event.colno
+      });
+    });
+
+    window.addEventListener('unhandledrejection', function (event) {
+      postEvent('page:unhandled-rejection', {
+        reason: event.reason ? String(event.reason) : 'unknown'
+      });
+    });
+
+    var origConsoleError = console.error;
+    console.error = function () {
+      try {
+        postEvent('page:console-error', {
+          args: Array.prototype.slice.call(arguments).map(function (value) {
+            return String(value);
+          })
+        });
+      } catch (_forwardError) {}
+      return origConsoleError.apply(console, arguments);
+    };
+
+    var origConsoleWarn = console.warn;
+    console.warn = function () {
+      try {
+        postEvent('page:console-warn', {
+          args: Array.prototype.slice.call(arguments).map(function (value) {
+            return String(value);
+          })
+        });
+      } catch (_forwardError) {}
+      return origConsoleWarn.apply(console, arguments);
+    };
   })();
   true;
 `;
